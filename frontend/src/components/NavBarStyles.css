@@ -24,6 +24,15 @@
 .nav-links {
   display: flex;
   align-items: center;
+  gap: 2rem;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.nav-center {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
 }
 
 .auth-links {
@@ -38,6 +47,11 @@
   padding: 0.5rem 1rem;
   border-radius: 4px;
   transition: all 0.2s;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
 }
 
 .nav-link:hover {
@@ -45,15 +59,10 @@
   background-color: #e9ecef;
 }
 
-.user-section {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.username {
+.user-name {
   color: #666;
   font-weight: 500;
+  padding: 0.5rem 0;
 }
 
 .logout-btn {
