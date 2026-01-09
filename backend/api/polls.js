@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { Poll, Option, Ballot, VoteToken } = require("../database");
 const { emitPollEvent } = require("../socket-server");
+const { authenticateJWT } = require("../auth");
 
 /**
  * Instant Runoff Voting (IRV) algorithm
@@ -66,11 +67,11 @@ const performInstantRunoffVoting = (optionIds, ballots) => {
   };
 };
 
-// POST /api/polls - Create a new poll with options
-router.post("/", async (req, res) => {
+// POST /api/polls - Create a new poll with options (authenticated users only)
+router.post("/", authenticateJWT, async (req, res) => {
   try {
     const { title, options = [] } = req.body;
-    const creatorId = req.user?.id || null;
+    const creatorId = req.user.id;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ error: "Poll title is required" });
@@ -225,7 +226,7 @@ router.post("/:id/vote", async (req, res) => {
 });
 
 // POST /api/polls/:id/close - Close poll and compute IRV results (creator only)
-router.post("/:id/close", async (req, res) => {
+router.post("/:id/close", authenticateJWT, async (req, res) => {
   try {
     const poll = await Poll.findByPk(req.params.id);
     if (!poll) {
@@ -233,8 +234,8 @@ router.post("/:id/close", async (req, res) => {
     }
 
     // Verify creator ownership
-    const userId = req.user?.id;
-    if (!userId || poll.creatorId !== userId) {
+    const userId = req.user.id;
+    if (poll.creatorId !== userId) {
       return res.status(403).json({
         error: "Only the poll creator can close this poll",
       });

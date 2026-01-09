@@ -155,29 +155,74 @@ npm start
 The backend runs on `http://localhost:8080`
 The frontend runs on `http://localhost:3000`
 
+## NEW: Two-Tier User System (Latest Implementation)
+
+### Authenticated Users (Poll Creators)
+- ✅ Login required to create polls
+- ✅ Own their polls via creatorId
+- ✅ See "Close Poll" button on their polls
+- ✅ View full results with IRV breakdown
+- ✅ Share results links
+
+### Anonymous Users (Voters)
+- ✅ Vote on any shared poll link
+- ✅ See live vote counts
+- ✅ Cannot create polls
+- ✅ Cannot close polls
+- ✅ Cannot view results until creator closes
+- ✅ One vote per session (localStorage token)
+
+### Backend Changes (Two-Tier System)
+- `POST /api/polls` - Now requires JWT authentication
+- `POST /api/polls/:id/close` - Requires JWT + creator verification
+- `GET /api/polls/:id` - Public (anyone can view)
+- `POST /api/polls/:id/vote` - Public (anyone can vote)
+
+### Frontend Changes (Two-Tier System)
+- `PollCreate.jsx` - Redirects non-authenticated users to login
+- `PollView.jsx` - Shows/hides features based on creator status
+- `Home.jsx` - Conditional UI for logged-in vs anonymous users
+- `App.jsx` - Passes user state to all routes
+
 ## Files Changed/Created
 
 ### Backend
-- `/backend/database/poll.js` (NEW)
+- `/backend/database/poll.js` (UPDATED - already had creatorId)
 - `/backend/database/option.js` (NEW)
 - `/backend/database/ballot.js` (NEW)
+- `/backend/database/vote-token.js` (NEW)
 - `/backend/database/index.js` (UPDATED)
-- `/backend/api/polls.js` (NEW)
+- `/backend/api/polls.js` (UPDATED - added auth middleware)
 - `/backend/api/index.js` (UPDATED)
+- `/backend/auth/index.js` (EXISTING - auth already implemented)
 
 ### Frontend
-- `/frontend/src/components/PollCreate.jsx` (NEW)
-- `/frontend/src/components/PollView.jsx` (NEW)
-- `/frontend/src/App.jsx` (UPDATED)
-- `/frontend/src/components/NavBar.jsx` (UPDATED)
-- `/frontend/src/components/NavBarStyles.css` (UPDATED)
-- `/frontend/src/components/Home.jsx` (UPDATED)
-- `/frontend/src/components/HomeStyles.css` (UPDATED)
+- `/frontend/src/components/PollCreate.jsx` (UPDATED - added auth check)
+- `/frontend/src/components/PollView.jsx` (UPDATED - added creator check)
+- `/frontend/src/components/Home.jsx` (UPDATED - conditional UI)
+- `/frontend/src/App.jsx` (UPDATED - pass user to routes)
+- `/frontend/src/components/NavBar.jsx` (EXISTING)
+- `/frontend/index.html` (NEW - HTML template for webpack)
+- `/frontend/webpack.config.js` (UPDATED - added HtmlWebpackPlugin)
+
+### Documentation
+- `TWO_TIER_USER_SYSTEM.md` (NEW)
+- `TESTING_TWO_TIER_SYSTEM.md` (NEW)
+- `SHARED_LINK_FIX.md` (NEW)
+- `FINAL_REPORT.md` (UPDATED)
 
 ## Notes
 
 - The app stores poll rankings as JSON arrays in the database
 - The instant runoff voting is calculated server-side for accuracy
 - Error handling provides user-friendly feedback
-- The frontend uses existing infrastructure (axios, React Router, etc.)
-- All existing authentication and user features remain intact
+- JWT tokens used for secure authentication
+- Vote deduplication uses localStorage tokens for session-based tracking
+- Two-tier system provides flexibility: creators control, voters participate
+
+## Current Status: ✅ FULLY IMPLEMENTED
+
+Both core features are complete and tested:
+1. ✅ Ranked choice voting system
+2. ✅ Two-tier user authentication system
+

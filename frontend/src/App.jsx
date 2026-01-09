@@ -66,9 +66,9 @@ const App = () => {
         <Routes>
           <Route path="/login" element={<Login setUser={setUser} />} />
           <Route path="/signup" element={<Signup setUser={setUser} />} />
-          <Route exact path="/" element={<Home />} />
-          <Route path="/create" element={<PollCreate />} />
-          <Route path="/poll/:id" element={<PollView />} />
+          <Route exact path="/" element={<Home user={user} />} />
+          <Route path="/create" element={<PollCreate user={user} />} />
+          <Route path="/poll/:id" element={<PollView user={user} />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </div>

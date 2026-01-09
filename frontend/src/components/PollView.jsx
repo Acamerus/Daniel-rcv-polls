@@ -15,7 +15,7 @@ const generateVoterToken = () => {
   return newToken;
 };
 
-const PollView = () => {
+const PollView = ({ user }) => {
   const { id } = useParams();
   const [poll, setPoll] = useState(null);
   const [options, setOptions] = useState([]);
@@ -32,6 +32,7 @@ const PollView = () => {
   const [shareUrl, setShareUrl] = useState("");
   const [hasVoted, setHasVoted] = useState(false);
   const [voterToken] = useState(generateVoterToken());
+  const [isCreator, setIsCreator] = useState(false);
 
   // Initialize socket connection
   useEffect(() => {
@@ -78,6 +79,11 @@ const PollView = () => {
           setTotalVotes(response.data.ballotCount);
         }
         
+        // Check if current user is the creator
+        if (user && response.data.poll.creatorId === user.id) {
+          setIsCreator(true);
+        }
+        
         // Set up shareable URLs
         const baseUrl = window.location.origin;
         setShareUrl(`${baseUrl}/poll/${id}`);
@@ -90,7 +96,7 @@ const PollView = () => {
       }
     };
     fetchPoll();
-  }, [id]);
+  }, [id, user]);
 
   const moveOption = (index, direction) => {
     if (
@@ -271,58 +277,72 @@ const PollView = () => {
         )}
 
         {showResults ? (
-          <div style={styles.resultsSection}>
-            <h3>Poll Results</h3>
-            {results?.winner ? (
-              <div>
+          // Only show full results to the creator
+          isCreator ? (
+            <div style={styles.resultsSection}>
+              <h3>Poll Results</h3>
+              {results?.winner ? (
+                <div>
+                  <p style={styles.resultText}>
+                    🏆 <strong>{getOptionText(results.winner)}</strong> wins!
+                  </p>
+                  <details style={styles.details}>
+                    <summary style={styles.summary}>View detailed rounds</summary>
+                    <div style={styles.roundsContainer}>
+                      {results.rounds?.map((round, idx) => (
+                        <div key={idx} style={styles.round}>
+                          <h4>Round {idx + 1}</h4>
+                          {Object.entries(round.counts).map(([optId, count]) => (
+                            <div key={optId}>
+                              {getOptionText(Number(optId))}: {count} votes
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              ) : results?.tie ? (
                 <p style={styles.resultText}>
-                  🏆 <strong>{getOptionText(results.winner)}</strong> wins!
+                  🤝 Tie between:{" "}
+                  {results.tie.map((id) => getOptionText(id)).join(", ")}
                 </p>
-                <details style={styles.details}>
-                  <summary style={styles.summary}>View detailed rounds</summary>
-                  <div style={styles.roundsContainer}>
-                    {results.rounds?.map((round, idx) => (
-                      <div key={idx} style={styles.round}>
-                        <h4>Round {idx + 1}</h4>
-                        {Object.entries(round.counts).map(([optId, count]) => (
-                          <div key={optId}>
-                            {getOptionText(Number(optId))}: {count} votes
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              </div>
-            ) : results?.tie ? (
-              <p style={styles.resultText}>
-                🤝 Tie between:{" "}
-                {results.tie.map((id) => getOptionText(id)).join(", ")}
-              </p>
-            ) : (
-              <p style={styles.resultText}>No results yet</p>
-            )}
+              ) : (
+                <p style={styles.resultText}>No results yet</p>
+              )}
 
-            {/* Shareable Results Link */}
-            <div style={styles.shareSection}>
-              <h4>Share Results</h4>
-              <div style={styles.shareBox}>
-                <input
-                  type="text"
-                  value={`${window.location.origin}/poll/${id}/results`}
-                  readOnly
-                  style={styles.shareInput}
-                />
-                <button onClick={copyResultsLink} style={styles.copyBtn}>
-                  📋 Copy Link
-                </button>
+              {/* Shareable Results Link */}
+              <div style={styles.shareSection}>
+                <h4>Share Results</h4>
+                <div style={styles.shareBox}>
+                  <input
+                    type="text"
+                    value={`${window.location.origin}/poll/${id}/results`}
+                    readOnly
+                    style={styles.shareInput}
+                  />
+                  <button onClick={copyResultsLink} style={styles.copyBtn}>
+                    📋 Copy Link
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            // Show message for non-creators when poll is closed
+            <div style={styles.resultsSection}>
+              <h3>Poll Closed</h3>
+              <p style={styles.resultText}>
+                This poll has been closed by the creator. Results are only visible to the creator.
+              </p>
+            </div>
+          )
         ) : hasVoted ? (
           <div style={styles.votedSection}>
             <p style={styles.votedMessage}>
               ✅ You have already voted in this poll. Thank you for participating!
+            </p>
+            <p style={styles.instructions}>
+              📊 Current votes: {totalVotes} {totalVotes === 1 ? "vote" : "votes"}
             </p>
             <p style={styles.instructions}>
               Watch the live vote count update in real-time as others vote.
@@ -394,14 +414,17 @@ const PollView = () => {
                 </form>
 
                 <div style={styles.pollControls}>
-                  <button
-                    onClick={handleClosePoll}
-                    style={styles.closePollBtn}
-                  >
-                    Close Poll & Calculate Results
-                  </button>
+                  {/* Show close button only to creator */}
+                  {isCreator && (
+                    <button
+                      onClick={handleClosePoll}
+                      style={styles.closePollBtn}
+                    >
+                      Close Poll & Calculate Results
+                    </button>
+                  )}
                   
-                  {/* Shareable Poll Link */}
+                  {/* Shareable Poll Link - show to all */}
                   <div style={styles.shareSection}>
                     <h4>Share This Poll</h4>
                     <div style={styles.shareBox}>

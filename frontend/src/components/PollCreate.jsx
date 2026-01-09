@@ -1,14 +1,21 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { API_URL } from "../shared";
 
-const PollCreate = () => {
+const PollCreate = ({ user }) => {
   const [title, setTitle] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Redirect to login if not authenticated
+    if (!user) {
+      navigate("/login");
+    }
+  }, [user, navigate]);
 
   const addOption = () => {
     setOptions((prev) => [...prev, ""]);
