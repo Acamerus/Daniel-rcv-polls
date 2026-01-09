@@ -6,12 +6,16 @@ During the Summer term, you built a ranked-choice voting app in teams over the c
 
 ## Getting Started
 
+**👉 NEW: Start with [START_HERE.md](START_HERE.md) for quick setup guide!**
+
 The starting point for this project is divided into /frontend and /backend folders, each of which is a separate NPM app.
 
 To install NPM packages, do something like the following:
 
 1. `cd backend && npm install`
 2. `cd ../frontend && npm install`
+
+Then follow [START_HERE.md](START_HERE.md) to run the servers.
 
 ## Requirements
 

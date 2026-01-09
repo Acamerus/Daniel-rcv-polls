@@ -1,7 +1,19 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { useParams } from "react-router-dom";
-import { API_URL } from "../shared";
+import { API_URL, SOCKETS_URL } from "../shared";
+import { io } from "socket.io-client";
+
+const generateVoterToken = () => {
+  // Generate a unique token for this voter based on session/browser
+  const storedToken = localStorage.getItem("voter-token-global");
+  if (storedToken) {
+    return storedToken;
+  }
+  const newToken = `voter-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  localStorage.setItem("voter-token-global", newToken);
+  return newToken;
+};
 
 const PollView = () => {
   const { id } = useParams();
@@ -14,6 +26,41 @@ const PollView = () => {
   const [success, setSuccess] = useState("");
   const [showResults, setShowResults] = useState(false);
   const [results, setResults] = useState(null);
+  const [liveData, setLiveData] = useState(null);
+  const [socket, setSocket] = useState(null);
+  const [totalVotes, setTotalVotes] = useState(0);
+  const [shareUrl, setShareUrl] = useState("");
+  const [hasVoted, setHasVoted] = useState(false);
+  const [voterToken] = useState(generateVoterToken());
+
+  // Initialize socket connection
+  useEffect(() => {
+    const newSocket = io(SOCKETS_URL, { withCredentials: true });
+
+    newSocket.on("connect", () => {
+      console.log("🔗 Connected to live poll updates");
+      // Join this poll's room
+      newSocket.emit("join-poll", parseInt(id));
+    });
+
+    // Listen for new votes
+    newSocket.on("new-vote", (data) => {
+      console.log("📊 New vote received:", data);
+      setLiveData(data);
+      setTotalVotes(data.totalVotes);
+    });
+
+    newSocket.on("disconnect", () => {
+      console.log("🔗 Disconnected from live updates");
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.emit("leave-poll", parseInt(id));
+      newSocket.disconnect();
+    };
+  }, [id]);
 
   useEffect(() => {
     const fetchPoll = async () => {
@@ -25,6 +72,16 @@ const PollView = () => {
         setOptions(response.data.options);
         // Initialize ranking with all option IDs
         setRanking(response.data.options.map((o) => o.id));
+        
+        // Set initial ballot count
+        if (response.data.ballotCount) {
+          setTotalVotes(response.data.ballotCount);
+        }
+        
+        // Set up shareable URLs
+        const baseUrl = window.location.origin;
+        setShareUrl(`${baseUrl}/poll/${id}`);
+        
         setLoading(false);
       } catch (err) {
         console.error("Fetch poll error:", err);
@@ -61,18 +118,24 @@ const PollView = () => {
     try {
       await axios.post(
         `${API_URL}/api/polls/${id}/vote`,
-        { ranking },
+        { ranking, voterToken },
         { withCredentials: true }
       );
       setSuccess("Your vote has been submitted!");
+      setHasVoted(true);
       // Reset form after short delay
       setTimeout(() => {
-        setRanking([]);
+        setRanking(options.map((o) => o.id));
         setSuccess("");
       }, 2000);
     } catch (err) {
       console.error("Submit vote error:", err);
-      setError(err.response?.data?.error || "Failed to submit vote");
+      if (err.response?.data?.alreadyVoted) {
+        setError("You have already voted in this poll");
+        setHasVoted(true);
+      } else {
+        setError(err.response?.data?.error || "Failed to submit vote");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -107,6 +170,78 @@ const PollView = () => {
     return option ? option.text : `Option ${optionId}`;
   };
 
+  const copyToClipboard = () => {
+    const fallbackCopy = (text) => {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand("copy");
+        setSuccess("Poll link copied to clipboard!");
+        document.body.removeChild(textArea);
+      } catch (err) {
+        console.error("Fallback copy failed:", err);
+        alert(`Copy this link: ${text}`);
+        document.body.removeChild(textArea);
+      }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(shareUrl)
+        .then(() => {
+          setSuccess("Poll link copied to clipboard!");
+        })
+        .catch((err) => {
+          console.log("Clipboard API failed, using fallback:", err);
+          fallbackCopy(shareUrl);
+        });
+    } else {
+      fallbackCopy(shareUrl);
+    }
+  };
+
+  const copyResultsLink = () => {
+    const resultsUrl = `${window.location.origin}/poll/${id}/results`;
+    
+    const fallbackCopy = (text) => {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand("copy");
+        setSuccess("Results link copied to clipboard!");
+        document.body.removeChild(textArea);
+      } catch (err) {
+        console.error("Fallback copy failed:", err);
+        alert(`Copy this link: ${text}`);
+        document.body.removeChild(textArea);
+      }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(resultsUrl)
+        .then(() => {
+          setSuccess("Results link copied to clipboard!");
+        })
+        .catch((err) => {
+          console.log("Clipboard API failed, using fallback:", err);
+          fallbackCopy(resultsUrl);
+        });
+    } else {
+      fallbackCopy(resultsUrl);
+    }
+  };
+
   if (loading) {
     return <div style={styles.container}>Loading poll...</div>;
   }
@@ -122,6 +257,18 @@ const PollView = () => {
 
         {error && <div style={styles.errorBox}>{error}</div>}
         {success && <div style={styles.successBox}>{success}</div>}
+
+        {/* Live Vote Counter */}
+        {!showResults && (
+          <div style={styles.liveCounter}>
+            <span style={styles.voteCount}>
+              📊 {totalVotes} {totalVotes === 1 ? "vote" : "votes"}
+            </span>
+            {liveData && (
+              <span style={styles.liveIndicator}>🔴 Live</span>
+            )}
+          </div>
+        )}
 
         {showResults ? (
           <div style={styles.resultsSection}>
@@ -155,6 +302,31 @@ const PollView = () => {
             ) : (
               <p style={styles.resultText}>No results yet</p>
             )}
+
+            {/* Shareable Results Link */}
+            <div style={styles.shareSection}>
+              <h4>Share Results</h4>
+              <div style={styles.shareBox}>
+                <input
+                  type="text"
+                  value={`${window.location.origin}/poll/${id}/results`}
+                  readOnly
+                  style={styles.shareInput}
+                />
+                <button onClick={copyResultsLink} style={styles.copyBtn}>
+                  📋 Copy Link
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : hasVoted ? (
+          <div style={styles.votedSection}>
+            <p style={styles.votedMessage}>
+              ✅ You have already voted in this poll. Thank you for participating!
+            </p>
+            <p style={styles.instructions}>
+              Watch the live vote count update in real-time as others vote.
+            </p>
           </div>
         ) : (
           <>
@@ -228,9 +400,22 @@ const PollView = () => {
                   >
                     Close Poll & Calculate Results
                   </button>
-                  <p style={styles.shareText}>
-                    Share this URL with voters: {window.location.href}
-                  </p>
+                  
+                  {/* Shareable Poll Link */}
+                  <div style={styles.shareSection}>
+                    <h4>Share This Poll</h4>
+                    <div style={styles.shareBox}>
+                      <input
+                        type="text"
+                        value={shareUrl}
+                        readOnly
+                        style={styles.shareInput}
+                      />
+                      <button onClick={copyToClipboard} style={styles.copyBtn}>
+                        📋 Copy Link
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
@@ -267,6 +452,26 @@ const styles = {
     marginBottom: "20px",
     color: "#333",
     textAlign: "center",
+  },
+  liveCounter: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "12px",
+    backgroundColor: "#e8f4f8",
+    border: "1px solid #b8dfe8",
+    borderRadius: "4px",
+    marginBottom: "20px",
+    fontSize: "14px",
+  },
+  voteCount: {
+    fontWeight: "600",
+    color: "#0066cc",
+  },
+  liveIndicator: {
+    fontSize: "12px",
+    color: "#d32f2f",
+    fontWeight: "bold",
   },
   errorBox: {
     backgroundColor: "#fee",
@@ -361,14 +566,36 @@ const styles = {
     fontWeight: "600",
     marginBottom: "15px",
   },
-  shareText: {
-    fontSize: "12px",
-    color: "#666",
-    wordBreak: "break-all",
+  shareSection: {
+    marginTop: "15px",
+    padding: "15px",
     backgroundColor: "#f9f9f9",
-    padding: "10px",
     borderRadius: "4px",
-    margin: 0,
+  },
+  shareBox: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+  },
+  shareInput: {
+    flex: 1,
+    padding: "8px",
+    border: "1px solid #ddd",
+    borderRadius: "4px",
+    fontSize: "12px",
+    fontFamily: "monospace",
+    backgroundColor: "#fff",
+  },
+  copyBtn: {
+    padding: "8px 12px",
+    backgroundColor: "#007bff",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "600",
+    whiteSpace: "nowrap",
   },
   closedText: {
     textAlign: "center",
@@ -409,6 +636,19 @@ const styles = {
     border: "1px solid #ddd",
     borderRadius: "4px",
     fontSize: "14px",
+  },
+  votedSection: {
+    backgroundColor: "#d4edda",
+    border: "1px solid #c3e6cb",
+    borderRadius: "4px",
+    padding: "20px",
+    textAlign: "center",
+  },
+  votedMessage: {
+    fontSize: "16px",
+    fontWeight: "600",
+    color: "#155724",
+    margin: "10px 0",
   },
 };
 

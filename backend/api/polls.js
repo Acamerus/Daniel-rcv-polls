@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
-const { Poll, Option, Ballot } = require("../database");
+const { Poll, Option, Ballot, VoteToken } = require("../database");
+const { emitPollEvent } = require("../socket-server");
 
 /**
  * Instant Runoff Voting (IRV) algorithm
@@ -124,7 +125,11 @@ router.get("/:id", async (req, res) => {
       where: { pollId: poll.id },
     });
 
-    res.json({ poll, options });
+    const ballots = await Ballot.findAll({
+      where: { pollId: poll.id },
+    });
+
+    res.json({ poll, options, ballotCount: ballots.length });
   } catch (err) {
     console.error("Get poll error:", err);
     res.status(500).json({ error: "Failed to get poll" });
@@ -134,11 +139,17 @@ router.get("/:id", async (req, res) => {
 // POST /api/polls/:id/vote - Submit a ranked ballot
 router.post("/:id/vote", async (req, res) => {
   try {
-    const { ranking } = req.body;
+    const { ranking, voterToken } = req.body;
 
     if (!Array.isArray(ranking) || ranking.length === 0) {
       return res.status(400).json({
         error: "Ranking array of option IDs is required",
+      });
+    }
+
+    if (!voterToken) {
+      return res.status(400).json({
+        error: "Voter token is required",
       });
     }
 
@@ -149,6 +160,21 @@ router.post("/:id/vote", async (req, res) => {
 
     if (!poll.isOpen) {
       return res.status(400).json({ error: "Poll is closed" });
+    }
+
+    // Check if this voter has already voted in this poll
+    const existingVote = await VoteToken.findOne({
+      where: {
+        pollId: poll.id,
+        token: voterToken,
+      },
+    });
+
+    if (existingVote) {
+      return res.status(400).json({
+        error: "You have already voted in this poll",
+        alreadyVoted: true,
+      });
     }
 
     // Validate that all ranking IDs are valid options for this poll
@@ -165,9 +191,30 @@ router.post("/:id/vote", async (req, res) => {
       });
     }
 
+    // Create ballot and vote token
     await Ballot.create({
       pollId: poll.id,
       ranking,
+    });
+
+    await VoteToken.create({
+      pollId: poll.id,
+      token: voterToken,
+    });
+
+    // Get updated ballot count and current tally
+    const ballots = await Ballot.findAll({
+      where: { pollId: poll.id },
+    });
+    const ballotsData = ballots.map((b) => b.ranking);
+    const optionIds = options.map((o) => o.id);
+    const currentTally = performInstantRunoffVoting(optionIds, ballotsData);
+
+    // Emit live update to all users watching this poll
+    emitPollEvent(poll.id, "new-vote", {
+      totalVotes: ballots.length,
+      currentTally,
+      timestamp: new Date(),
     });
 
     res.json({ message: "Ballot submitted successfully" });
@@ -177,12 +224,20 @@ router.post("/:id/vote", async (req, res) => {
   }
 });
 
-// POST /api/polls/:id/close - Close poll and compute IRV results
+// POST /api/polls/:id/close - Close poll and compute IRV results (creator only)
 router.post("/:id/close", async (req, res) => {
   try {
     const poll = await Poll.findByPk(req.params.id);
     if (!poll) {
       return res.status(404).json({ error: "Poll not found" });
+    }
+
+    // Verify creator ownership
+    const userId = req.user?.id;
+    if (!userId || poll.creatorId !== userId) {
+      return res.status(403).json({
+        error: "Only the poll creator can close this poll",
+      });
     }
 
     poll.isOpen = false;
